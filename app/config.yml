@@ -1,0 +1,9 @@
+admin_user:
+  role: admin
+  pwd: admin
+
+upload_user:
+  role: upload
+  pwd: upload
+
+target_dir: ./files
