@@ -1,11 +1,10 @@
 use actix_web::{HttpResponse, post, Responder};
-use actix_web::web::{Data, Form, Json};
+use actix_web::web::{Data, Json};
 use crate::app_config::AppSettings;
 use crate::domain::User;
 
 #[post("/login")]
-async fn login(user:Form<User>,data:Data<AppSettings>) -> impl Responder {
-    println!("user: {:?}", user);
+pub async fn login(user:Json<User>,data:Data<AppSettings>) -> impl Responder {
     let admin_user = &data.admin_user;
     let upload_user = &data.upload_user;
     if user.is_admin(admin_user){

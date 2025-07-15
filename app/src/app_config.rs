@@ -6,6 +6,7 @@ pub struct AppSettings {
     pub admin_user:UserSetting ,
     pub upload_user:UserSetting ,
     pub target_dir: String,
+    pub port: u16,
 }
 
 #[derive(Deserialize, Debug,Clone)]

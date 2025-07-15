@@ -7,3 +7,4 @@ upload_user:
   pwd: upload
 
 target_dir: ./files
+port: 8989
