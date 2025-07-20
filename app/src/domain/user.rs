@@ -1,6 +1,6 @@
+use crate::app_config::UserSetting;
 use secrecy::{ExposeSecret, SecretBox};
 use serde::Deserialize;
-use crate::app_config::UserSetting;
 
 #[derive(Deserialize, Debug)]
 pub struct User {
@@ -26,7 +26,7 @@ impl From<UserSetting> for User {
     fn from(user_setting: UserSetting) -> Self {
         User {
             role: user_setting.role,
-            pwd: user_setting.pwd
+            pwd: user_setting.pwd,
         }
     }
 }

@@ -1,4 +1,6 @@
-use app::spawn_app::spawn_app;
+use crate::common::spawn_app::spawn_app;
+
+mod common;
 
 #[tokio::test]
 async fn health_check()  {
