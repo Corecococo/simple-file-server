@@ -20,12 +20,12 @@ impl Default for Identity {
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for Identity
+impl<S> Transform<S, ServiceRequest> for Identity
 where
-    S: Service<ServiceRequest, Response = HttpResponse, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse, Error = Error>,
     S::Future: 'static,
 {
-    type Response = HttpResponse;
+    type Response = ServiceResponse;
     type Error = Error;
     type Transform = IdentityMiddleWare<S>;
     type InitError = ();
@@ -40,28 +40,30 @@ pub struct IdentityMiddleWare<S> {
     service: S,
 }
 
-impl<S> Service<HttpRequest> for IdentityMiddleWare<S>
+impl<S> Service<ServiceRequest> for IdentityMiddleWare<S>
 where
-    S: Service<ServiceRequest, Response = HttpResponse, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse, Error = Error>,
+    S::Future: 'static
 {
     type Response = S::Response;
     type Error = Error;
     type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(ctx)
-    }
+    forward_ready!(service);
 
-    fn call(&self, req: HttpRequest) -> Self::Future {
+    fn call(&self, req: ServiceRequest) -> Self::Future {
         let token = req.headers().get("Authorization");
-        if token.is_none() {
-            return ready(Ok(HttpResponse::Found()
-                .append_header(("Location", "/login"))
-                .finish()));
-        };
-        //let future = self.service.call(req);
-        //future
-        todo!()
+        match token {
+            Some(token) => {
+                todo!()
+            }
+            None => ready(Ok(ServiceResponse::new(
+                req.request().clone(),
+                HttpResponse::Found()
+                    .append_header(("Location", "/login"))
+                    .finish(),
+            ))),
+        }
     }
 }
 #[derive(Debug, Serialize, Deserialize)]
