@@ -5,6 +5,7 @@ use actix_web::dev::Server;
 use actix_web::web::{Data, ServiceConfig};
 use actix_web::{App, HttpServer};
 use std::net::TcpListener;
+use actix_web::http::header::ContentEncoding::Identity;
 use actix_web::middleware::DefaultHeaders;
 use tracing_actix_web::TracingLogger;
 
@@ -16,6 +17,7 @@ pub fn run(listener: TcpListener, app_settings: AppSettings) -> Result<Server, s
             // using tracing logger middleware replace default logger middleware
             // because default logger is used log crate
             .wrap(TracingLogger::default())
+            .wrap(crate::middleware::identity::Identity::default())
             .app_data(Data::new(app_settings.clone()))
             .configure(register_service)
     })

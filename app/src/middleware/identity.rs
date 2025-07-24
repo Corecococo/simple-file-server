@@ -1,12 +1,12 @@
-use actix_web::body::MessageBody;
+use actix_web::body::{BoxBody, EitherBody, MessageBody};
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready};
-use actix_web::{Error, HttpRequest, HttpResponse};
+use actix_web::http::header::HeaderValue;
+use actix_web::{Error, HttpResponse};
+use futures_util::future::LocalBoxFuture;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::future::ready;
-use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
-use tokio::io::Ready;
 
 pub struct Identity {
     token: Claim,
@@ -20,19 +20,20 @@ impl Default for Identity {
     }
 }
 
-impl<S> Transform<S, ServiceRequest> for Identity
+impl<S, B> Transform<S, ServiceRequest> for Identity
 where
-    S: Service<ServiceRequest, Response = ServiceResponse, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
     S::Future: 'static,
+    B: MessageBody,
 {
-    type Response = ServiceResponse;
+    type Response = ServiceResponse<EitherBody<B,BoxBody>>;
     type Error = Error;
     type Transform = IdentityMiddleWare<S>;
     type InitError = ();
     type Future = std::future::Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        todo!()
+        ready(Ok(IdentityMiddleWare { service }))
     }
 }
 
@@ -40,32 +41,51 @@ pub struct IdentityMiddleWare<S> {
     service: S,
 }
 
-impl<S> Service<ServiceRequest> for IdentityMiddleWare<S>
+impl<S, B> Service<ServiceRequest> for IdentityMiddleWare<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse, Error = Error>,
-    S::Future: 'static
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+    S::Future: 'static,
+    B: MessageBody,
 {
-    type Response = S::Response;
+    type Response = ServiceResponse<EitherBody<B,BoxBody>>;
     type Error = Error;
-    type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
+    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let token = req.headers().get("Authorization");
-        match token {
-            Some(token) => {
-                todo!()
-            }
-            None => ready(Ok(ServiceResponse::new(
-                req.request().clone(),
-                HttpResponse::Found()
-                    .append_header(("Location", "/login"))
-                    .finish(),
-            ))),
+        if let Some(value) = token
+            && check_token(value)
+        {
+            let next = self.service.call(req);
+            return Box::pin(async move {
+                let res = next.await?.map_into_right_body();
+                Ok(res)
+            });
         }
+        let http_res = HttpResponse::Found()
+            .append_header(("Location", "/login"))
+            .finish()
+            .map_into_right_body();
+        let mut service_res = ServiceResponse::new(req.into_parts().0, http_res);
+        Box::pin(async move { Ok(service_res) })
     }
 }
+
+fn check_token(value: &HeaderValue) -> bool {
+    if let Ok(token) = value.to_str() {
+        let claim = Claim::try_from(token.to_string());
+        if claim.is_err() {
+            false
+        } else {
+            claim.unwrap().is_exp()
+        }
+    } else {
+        false
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claim {
     //aud: String, // Optional. Audience
@@ -81,7 +101,7 @@ impl Default for Claim {
         Claim {
             //aud: "app".to_string(),
             exp: 0,
-            iat: 0,
+            iat,
             iss: "coco".to_string(),
             //sub: "simple-file-server".to_string(),
         }
