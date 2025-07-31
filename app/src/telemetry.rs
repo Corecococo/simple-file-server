@@ -1,14 +1,26 @@
 use std::fmt::Debug;
+use std::io::{Stdout, Write, sink, stdout};
 use tracing::Subscriber;
 use tracing::subscriber::{SetGlobalDefaultError, set_global_default};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{fmt, EnvFilter, Layer, Registry};
+use tracing_subscriber::{EnvFilter, Layer, Registry, fmt};
+use tracing_subscriber::fmt::MakeWriter;
 
 // build logger subscriber
-pub fn build_tracing_subscriber(name: String,filter: String) -> impl Subscriber + Send + Sync + 'static {
+pub fn build_tracing_subscriber<W>(
+    name: String,
+    filter: String,
+    writer: W,
+) -> impl Subscriber + Send + Sync + 'static
+where
+    W: for<'a> MakeWriter<'a> + 'static + Send + Sync,
+{
     let env_filter_layer = EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new(filter));
-    let bunyan_formatter_layer = BunyanFormattingLayer::new(name, std::io::stdout);
+
+    let bunyan_formatter_std_layer = BunyanFormattingLayer::new(name.clone(), stdout);
+
+    let bunyan_formatter_write_layer = BunyanFormattingLayer::new(name, writer);
 
     Registry::default()
         .with(env_filter_layer)
@@ -16,7 +28,8 @@ pub fn build_tracing_subscriber(name: String,filter: String) -> impl Subscriber 
         .with(JsonStorageLayer) // JsonStorageLayer is unit struct, can be used directly
         // This layer is exclusively concerned with formatting information using the Bunyan format.
         // It relies on the upstream JsonStorageLayer to get access to the fields attached to each span.
-        .with(bunyan_formatter_layer)
+        .with(bunyan_formatter_std_layer)
+        .with(bunyan_formatter_write_layer)
 }
 
 // init logger

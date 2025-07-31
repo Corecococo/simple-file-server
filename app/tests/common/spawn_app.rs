@@ -1,3 +1,4 @@
+use std::io::sink;
 use std::net::TcpListener;
 use once_cell::sync::Lazy;
 use app::app_config::load_app_config;
@@ -22,6 +23,6 @@ pub async fn spawn_app() -> TestApp {
 pub struct TestApp(pub u16);
 
 static TRACING:Lazy<()> = Lazy::new(||{
-    let subscriber = build_tracing_subscriber("test".into(), "debug".into());
+    let subscriber = build_tracing_subscriber("test".into(), "debug".into(),sink);
     init_logger(subscriber);
 });

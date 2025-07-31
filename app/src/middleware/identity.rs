@@ -7,18 +7,10 @@ use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode}
 use serde::{Deserialize, Serialize};
 use std::future::ready;
 use std::time::{Duration, SystemTime};
+use actix_web::error::ErrorUnauthorized;
+use serde_json::json;
 
-pub struct Identity {
-    token: Claim,
-}
-
-impl Default for Identity {
-    fn default() -> Self {
-        Identity {
-            token: Claim::default(),
-        }
-    }
-}
+pub struct Identity;
 
 impl<S, B> Transform<S, ServiceRequest> for Identity
 where
@@ -26,7 +18,7 @@ where
     S::Future: 'static,
     B: MessageBody,
 {
-    type Response = ServiceResponse<EitherBody<B,BoxBody>>;
+    type Response = ServiceResponse<B>;
     type Error = Error;
     type Transform = IdentityMiddleWare<S>;
     type InitError = ();
@@ -47,7 +39,7 @@ where
     S::Future: 'static,
     B: MessageBody,
 {
-    type Response = ServiceResponse<EitherBody<B,BoxBody>>;
+    type Response = ServiceResponse<B>;
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
@@ -56,30 +48,31 @@ where
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let token = req.headers().get("Authorization");
         if let Some(value) = token
-            && check_token(value)
+            && is_valid_token(value)
         {
             let next = self.service.call(req);
             return Box::pin(async move {
-                let res = next.await?.map_into_right_body();
+                let res = next.await?;
                 Ok(res)
             });
         }
-        let http_res = HttpResponse::Found()
-            .append_header(("Location", "/login"))
-            .finish()
-            .map_into_right_body();
-        let mut service_res = ServiceResponse::new(req.into_parts().0, http_res);
-        Box::pin(async move { Ok(service_res) })
+
+        // if req without token or token is invalid, return unauthorized
+        Box::pin(
+            async move{
+                Err(ErrorUnauthorized(json!({"code":401,"msg":"unauthorized"})))
+            }
+        )
     }
 }
 
-fn check_token(value: &HeaderValue) -> bool {
+fn is_valid_token(value: &HeaderValue) -> bool {
     if let Ok(token) = value.to_str() {
         let claim = Claim::try_from(token.to_string());
         if claim.is_err() {
             false
         } else {
-            claim.unwrap().is_exp()
+            !claim.unwrap().is_exp()
         }
     } else {
         false
@@ -92,6 +85,7 @@ pub struct Claim {
     exp: usize, // Required (validate_exp defaults to true in validation). Expiration time (as UTC timestamp)
     iat: usize, // Optional. Issued at (as UTC timestamp)
     iss: String, // Optional. Issuer
+    role: Option<String>,
                 //sub: String, // Optional. Subject (whom token refers to)
 }
 
@@ -103,14 +97,16 @@ impl Default for Claim {
             exp: 0,
             iat,
             iss: "coco".to_string(),
+            role:None
             //sub: "simple-file-server".to_string(),
         }
     }
 }
 impl Claim {
-    pub fn generate_token(&mut self, exp: Duration) -> String {
+    pub fn generate_token(&mut self, exp: Duration, role:Option<String>) -> String {
         let exp = calculate_exp(exp);
         self.exp = exp;
+        self.role = role;
         let token = encode(
             &Header::default(),
             self,
@@ -158,22 +154,24 @@ mod tests {
     #[test]
     fn test_generate_token() {
         let mut claim = Claim::default();
-        let token = claim.generate_token(Duration::from_secs(60));
-        println!("{}", token);
+        let token = claim.generate_token(Duration::from_secs(60),None);
+        dbg!(&token);
     }
 
     #[test]
     fn token_is_valid() {
         let mut claim = Claim::default();
-        let token = claim.generate_token(Duration::from_secs(60));
+        let token = claim.generate_token(Duration::from_secs(60),None);
+        dbg!(&token);
         let parsed_claim = Claim::try_from(token);
+        dbg!(&parsed_claim);
         assert_ok!(parsed_claim);
     }
 
     #[test]
     fn token_is_invalid() {
         let mut claim = Claim::default();
-        let mut token = claim.generate_token(Duration::from_secs(60));
+        let mut token = claim.generate_token(Duration::from_secs(60),None);
         token.push_str("a");
         let parsed_claim = Claim::try_from(token);
         assert_err!(parsed_claim);
@@ -182,7 +180,7 @@ mod tests {
     #[test]
     fn token_is_exp() {
         let mut claim = Claim::default();
-        let token = claim.generate_token(Duration::from_secs(0));
+        let token = claim.generate_token(Duration::from_secs(0),None);
         sleep(Duration::from_secs(1));
         let parsed_claim = Claim::try_from(token).unwrap();
         assert!(parsed_claim.is_exp());
@@ -191,7 +189,7 @@ mod tests {
     #[test]
     fn token_is_not_exp() {
         let mut claim = Claim::default();
-        let token = claim.generate_token(Duration::from_secs(60));
+        let token = claim.generate_token(Duration::from_secs(60),None);
         let parsed_claim = Claim::try_from(token).unwrap();
         assert!(!parsed_claim.is_exp());
     }
