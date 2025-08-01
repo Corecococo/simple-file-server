@@ -1,5 +1,4 @@
 use crate::app_config::UserSetting;
-use secrecy::{ExposeSecret, SecretBox};
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug)]

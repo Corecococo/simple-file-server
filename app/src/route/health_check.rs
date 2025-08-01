@@ -1,4 +1,5 @@
-use actix_web::{Error, HttpResponse, Responder, get};
+use crate::msg;
+use actix_web::{Error, HttpResponse, get};
 use serde_json::json;
 
 #[utoipa::path(
@@ -11,9 +12,5 @@ use serde_json::json;
 )]
 #[get("/health")]
 pub async fn health_check() -> Result<HttpResponse, Error> {
-    let json_msg = json!({
-        "code": 200,
-        "msg": "Server is running"
-    });
-    Ok(HttpResponse::Ok().body(format!("{}", json_msg)))
+    Ok(HttpResponse::Ok().body(msg!(200, "server is running")))
 }

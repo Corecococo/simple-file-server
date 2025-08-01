@@ -2,17 +2,15 @@ use crate::app_config::AppSettings;
 use crate::msg;
 use actix_multipart::form::MultipartForm;
 use actix_multipart::form::tempfile::TempFile;
-use actix_web::web::{Data, Json};
-use actix_web::{HttpResponse, Responder, post};
-use serde::{Deserialize, Serialize};
+use actix_web::error::{ErrorBadRequest, ErrorInternalServerError};
+use actix_web::web::Data;
+use actix_web::{Error, HttpResponse, post};
+use serde::Deserialize;
 use serde_json::json;
-use std::env::current_dir;
-use std::fs::{File, metadata};
-use std::io::{BufReader, BufWriter, Read, Write};
-use std::time::{Duration, SystemTime};
-use actix_web::error::HttpError;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tracing::{error, info, instrument};
-use utoipa::{IntoParams, ToSchema};
+use utoipa::ToSchema;
 
 #[utoipa::path(
     tag = "Upload",
@@ -38,48 +36,46 @@ use utoipa::{IntoParams, ToSchema};
 pub async fn upload(
     MultipartForm(form): MultipartForm<UploadDto>,
     data: Data<AppSettings>,
-) -> impl Responder {
-    let metadata = serde_json::from_str::<Metadata>(form.metadata.as_str());
-    if metadata.is_err() {
-        return HttpResponse::BadRequest()
-            .body(format!("{}", msg!(400, "the metadata is invalid")));
-    }
+) -> Result<HttpResponse, Error> {
+    let metadata = serde_json::from_str::<Metadata>(form.metadata.as_str()).map_err(|e| {
+        error!("{:?}", e);
+        ErrorBadRequest(msg!(400, "the metadata is invalid"))
+    })?;
 
-    let metadata = metadata.unwrap();
     let save_file_name = format!(
         "{}_{}_{}",
         metadata.who,
         metadata.purpose,
-        form.file.file_name.unwrap()
+        form.file.file_name.unwrap_or("unknow".to_string())
     );
-    let current_path = current_dir().unwrap();
-    let create_file_res = File::create(format!("{}", save_file_name));
-    if create_file_res.is_err() {
-        error!("{:?}", create_file_res);
-        return HttpResponse::InternalServerError()
-            .body(format!("{}", msg!(500, "create file failed")));
-    }
 
-    let save_file = create_file_res.unwrap();
-    let mut buf_reader = BufReader::with_capacity(2048, form.file.file);
+    let target_dir = data.target_dir.clone();
+    let save_file = File::create(format!("{}/{}", target_dir, save_file_name))
+        .await
+        .map_err(|e| {
+            error!("{:?}", e);
+            ErrorInternalServerError(msg!(500, "internal server error"))
+        })?;
+
+    let mut buf_reader = BufReader::with_capacity(2048, File::from_std(form.file.file.into_file()));
     let mut buf_writer = BufWriter::with_capacity(2048, save_file);
     let mut buf = [0u8; 2048];
     info!("Saving upload file");
-    let start_time_span = SystemTime::now();
     loop {
-        let read_count = buf_reader.read(&mut buf).unwrap();
+        let read_count = buf_reader.read(&mut buf).await.map_err(|e| {
+            error!("{:?}", e);
+            ErrorInternalServerError(msg!(500, "internal server error"))
+        })?;
         if read_count == 0 {
             break;
         }
-        let _ = buf_writer.write(&buf[..read_count]).unwrap();
+        let _ = buf_writer.write(&buf[..read_count]).await.map_err(|e| {
+            error!("{:?}", e);
+            ErrorInternalServerError(msg!(500, "internal server error"))
+        })?;
     }
-    let elapsed = start_time_span
-        .elapsed()
-        .unwrap_or(Duration::from_secs(0))
-        .as_secs();
-    info!("Save upload file success, time elapsed {} sec", elapsed);
-    HttpResponse::Ok().body(format!("{}", msg!(200, "upload success")))
-
+    info!("Save upload file success");
+    Ok(HttpResponse::Ok().body(msg!(200, "upload success")))
 }
 
 #[derive(Debug, MultipartForm)]
@@ -100,7 +96,10 @@ struct Metadata {
 #[derive(Debug, ToSchema, Deserialize)]
 struct UploadApiDto {
     #[schema(format = "binary", value_type = String)]
+    #[allow(dead_code)]
     file: Vec<u8>,
-    #[schema(format = "json", value_type = String, example = json!({"who":"coco","purpose":"test"}) )]
+    #[schema(format = "json", value_type = String, example = json!({"who":"coco","purpose":"test"})
+    )]
+    #[allow(dead_code)]
     metadata: String,
 }

@@ -1,10 +1,9 @@
-use std::fmt::Debug;
-use std::io::{Stdout, Write, sink, stdout};
+use std::io::{stdout};
 use tracing::Subscriber;
-use tracing::subscriber::{SetGlobalDefaultError, set_global_default};
+use tracing::subscriber::{ set_global_default};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::{EnvFilter, Layer, Registry, fmt};
+use tracing_subscriber::{EnvFilter, Registry};
 use tracing_subscriber::fmt::MakeWriter;
 
 // build logger subscriber

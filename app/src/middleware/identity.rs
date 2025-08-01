@@ -1,7 +1,7 @@
-use actix_web::body::{BoxBody, EitherBody, MessageBody};
+use actix_web::body::{ MessageBody};
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready};
 use actix_web::http::header::HeaderValue;
-use actix_web::{Error, HttpResponse};
+use actix_web::{Error};
 use futures_util::future::LocalBoxFuture;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};

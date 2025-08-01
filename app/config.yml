@@ -6,5 +6,6 @@ upload_user:
   role: upload
   pwd: upload
 
-target_dir: ./files
+target_dir: D:\Projects\Rust\simple-file-server\uploads
 port: 8989
+use_swagger: false
